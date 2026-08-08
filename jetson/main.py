@@ -1,10 +1,24 @@
 #!/usr/bin/env python3
 """
-Jetson Nano -> Pololu Mini Maestro 18-Channel USB Servo Controller
+Jetson Nano -> Pololu Mini Maestro 18-Channel Servo Controller (UART / TTL serial)
 
-Talks to the Maestro over USB (pyserial) using the Compact Protocol and
-lets you drive servos by typing CSV lines in the terminal:
+Wiring (Jetson Nano 40-pin header):
+    Nano pin 6  (GND)      -> Maestro GND
+    Nano pin 8  (UART TXD) -> Maestro RX
+    [optional, for reading back]
+    Nano pin 10 (UART RXD) <- Maestro TX
 
+    NOTE: This is one-way as wired above (TX only). Commands work fine;
+    reading servo positions / error flags requires the optional RX line.
+    The Nano's 3.3V logic drives the Maestro's RX input fine.
+
+Maestro configuration (set once via Maestro Control Center):
+    Serial Settings -> Serial mode: "UART, fixed baud rate"
+      -> then set AUTO_DETECT_BAUD = False below, and match BAUD_RATE.
+    or  Serial mode: "UART, detect baud rate"
+      -> then leave AUTO_DETECT_BAUD = True (sends 0xAA on startup).
+
+Terminal input is CSV:
     servo_num,angle
 
 Speed and acceleration are fixed globally (see SPEED / ACCELERATION below)
@@ -14,19 +28,19 @@ Example:
     0,90      -> channel 0 to 90 degrees
     1,0       -> channel 1 to 0 degrees
 
-Setup notes (Maestro Control Center, on a PC first):
-  - Serial Settings -> Serial mode: "USB Dual Port" (or "USB Chained")
-    so the command port accepts Compact Protocol bytes directly.
-  - On Linux/Jetson the command port usually shows up as /dev/ttyACM0.
-  - Run `ls /dev/ttyACM*` after plugging in to confirm the port.
-
 Usage:
-    python3 maestro_control.py --port /dev/ttyACM0
+    python3 maestro_control.py --port /dev/ttyTHS1 --baud 9600
 """
 
 import sys
+import time
 import argparse
 import serial
+
+# --- Serial settings. Must match the Maestro's configuration. ---
+DEFAULT_PORT = "/dev/ttyTHS1"   # Jetson Nano UART on header pins 8/10
+BAUD_RATE = 9600
+AUTO_DETECT_BAUD = True         # True if Maestro is in "detect baud rate" mode
 
 # --- Pulse range in microseconds. Adjust to match your servos' spec. ---
 MIN_PULSE_US = 1000
@@ -44,9 +58,14 @@ ACCELERATION = 5
 class MaestroController:
     """Minimal wrapper around the Maestro Compact Protocol over pyserial."""
 
-    def __init__(self, port, baudrate=9600, timeout=1):
-        # Baud rate is irrelevant over native USB but pyserial requires one.
+    def __init__(self, port, baudrate=BAUD_RATE, timeout=1, detect_baud=AUTO_DETECT_BAUD):
         self.ser = serial.Serial(port, baudrate, timeout=timeout)
+        if detect_baud:
+            # Required by the Maestro's "detect baud rate" UART mode.
+            # Harmless to omit if the Maestro uses a fixed baud rate.
+            self.ser.write(bytes([0xAA]))
+            self.ser.flush()
+            time.sleep(0.05)
 
     def close(self):
         if self.ser.is_open:
@@ -58,6 +77,7 @@ class MaestroController:
         low = value & 0x7F
         high = (value >> 7) & 0x7F
         self.ser.write(bytes([cmd, channel, low, high]))
+        self.ser.flush()
 
     def set_target(self, channel, angle_deg):
         """Move channel to angle_deg (0-180), converted to quarter-us pulse."""
@@ -69,11 +89,9 @@ class MaestroController:
         self._send(0x84, channel, target_qus)
 
     def set_speed(self, channel, speed):
-        """0 = unlimited, else 1-255 (units of 0.25us per 10ms)."""
         self._send(0x87, channel, speed)
 
     def set_acceleration(self, channel, accel):
-        """0 = unlimited, else 1-255 (units of 0.25us per 10ms per 80ms)."""
         self._send(0x89, channel, accel)
 
     def apply(self, channel, angle_deg, speed, accel):
@@ -96,21 +114,26 @@ def parse_csv_line(line):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Control Maestro servos via CSV input from the terminal"
+        description="Control Maestro servos over UART via CSV input from the terminal"
     )
+    parser.add_argument("--port", default=DEFAULT_PORT, help="Serial port (Jetson UART)")
+    parser.add_argument("--baud", type=int, default=BAUD_RATE, help="Baud rate")
     parser.add_argument(
-        "--port", default="/dev/ttyACM0", help="Maestro command serial port"
+        "--no-baud-detect",
+        action="store_true",
+        help="Skip the 0xAA byte (use when Maestro is in fixed-baud UART mode)",
     )
-    parser.add_argument("--baud", type=int, default=9600, help="Baud rate (unused over USB)")
     args = parser.parse_args()
 
     try:
-        maestro = MaestroController(args.port, args.baud)
+        maestro = MaestroController(
+            args.port, args.baud, detect_baud=not args.no_baud_detect
+        )
     except serial.SerialException as e:
         print(f"Failed to open serial port {args.port}: {e}")
         sys.exit(1)
 
-    print(f"Connected to Maestro on {args.port}")
+    print(f"Connected on {args.port} @ {args.baud} baud")
     print("Enter: servo_num,angle")
     print(f"  angle: 0-180 deg | speed={SPEED} accel={ACCELERATION} (fixed globally)")
     print("Type 'q' to quit.\n")
