@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+venv/
+
+# Arduino build output
+*.hex
+*.elf
+build/
+
+# macOS
+.DS_Store
