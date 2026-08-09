@@ -60,6 +60,7 @@ def handle_request(obj):
     if not isinstance(obj, dict):
         raise TypeError("request must be a JSON object")
     cmd = obj.get("cmd")
+    print(f"cmd: {cmd}", flush=True)
     if not cmd:
         raise ValueError("missing cmd")
 
