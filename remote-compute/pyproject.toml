@@ -1,9 +1,8 @@
 [project]
 name = "remote-compute"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
+description = "Rocky FastMCP server (talks to Jetson TCP Maestro pipe)"
 requires-python = ">=3.12"
 dependencies = [
-    "pyserial>=3.5",
+    "fastmcp[code-mode]>=3.1.0",
 ]
