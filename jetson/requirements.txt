@@ -1,0 +1,4 @@
+# Jetson side only needs pyserial (already installed for niraj).
+# TCP pipe: python3 jetson/server.py
+# MCP runs on the Mac under remote-compute/, not here.
+pyserial>=3.5

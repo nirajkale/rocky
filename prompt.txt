@@ -1,0 +1,13 @@
+Next task to complete the goal of setting servo positions in neutral is to create an MCP server for the robot & deploy it on robot which can be used by an LLM to control. 
+
+use "fastmcp" mcp to write me a server here: 
+jetson/server.py
+
+Lets do it in below fashion:
+- lets write some low-level utils, like a class to actually control the servo which will re-use in both current main & server.py
+- we need to write below tools in this server:
+   * get_servo_postions() -> returns the mappings for which servo means which joint, should be the first tool the llm should use
+   * set_servo_angle_by_name(name, angle) -> name should be one of mappings & angles should be between 0 & 180
+   * set_servo_angle_by_position(position, angle) -> position between 0 & 17, angle as above
+- additionally, lets also add code transform so the LLM can write code to execute it
+- this mcp server will run jetson with http transport.
