@@ -9,6 +9,7 @@ Commands:
   {"cmd":"get_servo_positions"}
   {"cmd":"set_servo_angle_by_name","name":"R1.coxa","angle":90}
   {"cmd":"set_servo_angle_by_position","position":1,"angle":90}
+  Optional on set cmds: "speed" (0-16383, default 32), "acceleration" (0-255, default 5)
 
 Replies:
   {"ok":true,"result":...}
@@ -79,10 +80,14 @@ def dispatch(req):
         return servo_position_map()
 
     if req.cmd == COMMAND.SET_SERVO_ANGLE_BY_NAME:
-        return get_maestro().set_angle_by_name(req.name, req.angle)
+        return get_maestro().set_angle_by_name(
+            req.name, req.angle, speed=req.speed, acceleration=req.acceleration
+        )
 
     if req.cmd == COMMAND.SET_SERVO_ANGLE_BY_POSITION:
-        return get_maestro().set_angle_by_position(req.position, req.angle)
+        return get_maestro().set_angle_by_position(
+            req.position, req.angle, speed=req.speed, acceleration=req.acceleration
+        )
 
     raise ValueError(f"unknown cmd {req.cmd!r}")
 

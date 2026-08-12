@@ -11,7 +11,9 @@ class COMMAND(Enum):
 
 
 class Request(object):
-    def __init__(self, cmd, name=None, angle=None, position=None):
+    def __init__(
+        self, cmd, name=None, angle=None, position=None, speed=None, acceleration=None
+    ):
         if isinstance(cmd, COMMAND):
             self.cmd = cmd
         else:
@@ -19,6 +21,8 @@ class Request(object):
         self.name = name
         self.angle = angle
         self.position = position
+        self.speed = speed
+        self.acceleration = acceleration
 
     @classmethod
     def parse(cls, obj):
@@ -32,6 +36,8 @@ class Request(object):
                 name=obj.get("name"),
                 angle=obj.get("angle"),
                 position=obj.get("position"),
+                speed=obj.get("speed"),
+                acceleration=obj.get("acceleration"),
             )
         except ValueError:
             raise ValueError(f"unknown cmd {obj.get('cmd')!r}")
@@ -48,6 +54,14 @@ class Request(object):
                 raise ValueError("position is required")
             if self.angle is None:
                 raise ValueError("angle is required")
+        if self.speed is not None:
+            # Compact Protocol encodes speed as 14-bit (0 = unlimited).
+            self.speed = _validate_int_range(self.speed, "speed", 0, 16383)
+        if self.acceleration is not None:
+            # Maestro docs: acceleration is 0-255 (0 = unlimited).
+            self.acceleration = _validate_int_range(
+                self.acceleration, "acceleration", 0, 255
+            )
         return self
 
     def to_dict(self):
@@ -58,7 +72,21 @@ class Request(object):
             out["angle"] = self.angle
         if self.position is not None:
             out["position"] = self.position
+        if self.speed is not None:
+            out["speed"] = self.speed
+        if self.acceleration is not None:
+            out["acceleration"] = self.acceleration
         return out
+
+
+def _validate_int_range(value, field, lo, hi):
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field} must be an integer {lo}-{hi}")
+    if not (lo <= n <= hi):
+        raise ValueError(f"{field} must be an integer {lo}-{hi}")
+    return n
 
 
 class Response(object):

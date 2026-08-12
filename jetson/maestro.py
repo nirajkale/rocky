@@ -19,9 +19,10 @@ MAX_PULSE_US = 2000
 MIN_ANGLE = 0
 MAX_ANGLE = 180
 
-# --- Global speed/acceleration applied to every move. ---
-# speed: 0 = unlimited, else 1-255 (units of 0.25us per 10ms)
-# acceleration: 0 = unlimited, else 1-255 (units of 0.25us per 10ms per 80ms)
+# --- Default speed/acceleration applied when a move omits overrides. ---
+# At the default 20 ms servo period (Pololu Maestro User's Guide §4.b / §5.e):
+#   speed: 0 = unlimited; else units of (0.25 us)/(10 ms). Wire range 0-16383.
+#   acceleration: 0 = unlimited; else 1-255 in units of (0.25 us)/(10 ms)/(80 ms).
 SPEED = 32
 ACCELERATION = 5
 
@@ -168,9 +169,11 @@ class MaestroController:
             "acceleration": accel,
         }
 
-    def set_angle_by_position(self, position, angle):
-        return self.apply(position, angle)
+    def set_angle_by_position(self, position, angle, speed=None, acceleration=None):
+        return self.apply(position, angle, speed=speed, accel=acceleration)
 
-    def set_angle_by_name(self, name, angle):
+    def set_angle_by_name(self, name, angle, speed=None, acceleration=None):
         name = resolve_joint_name(name)
-        return self.apply(JOINT_TO_CHANNEL[name], angle)
+        return self.apply(
+            JOINT_TO_CHANNEL[name], angle, speed=speed, accel=acceleration
+        )

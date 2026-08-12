@@ -19,6 +19,36 @@ DEFAULT_HOST = os.environ.get("ROCKY_JETSON_HOST", "192.168.3.23")
 DEFAULT_PORT = int(os.environ.get("ROCKY_JETSON_PORT", "9000"))
 DEFAULT_TIMEOUT_S = float(os.environ.get("ROCKY_JETSON_TIMEOUT", "5"))
 
+# Left-side channels (L1/L2/L3). Matches jetson/maestro.py wiring.
+_LEFT_INVERT_CHANNELS = frozenset({3, 4, 5, 11, 12, 13, 14, 16, 17})
+_LEFT_INVERT_JOINTS = frozenset(
+    {
+        "L1.coxa",
+        "L1.femur",
+        "L1.tibia",
+        "L2.coxa",
+        "L2.femur",
+        "L2.tibia",
+        "L3.coxa",
+        "L3.femur",
+        "L3.tibia",
+    }
+)
+
+
+def _angle_for_joint(
+    *, angle: float, name: str | None = None, position: int | None = None
+) -> float:
+    """Invert left-side joints so logical angles match right-side pose."""
+    invert = False
+    if name is not None:
+        invert = name in _LEFT_INVERT_JOINTS
+    elif position is not None:
+        invert = int(position) in _LEFT_INVERT_CHANNELS
+    if invert:
+        return 180.0 - float(angle)
+    return float(angle)
+
 
 class JetsonTcpClient:
     """Persistent JSON-line client to the Jetson TCP servo pipe."""
@@ -63,6 +93,10 @@ class JetsonTcpClient:
 
     def request(self, payload: Request | dict[str, Any]) -> Any:
         req = payload if isinstance(payload, Request) else Request.parse(payload)
+        if req.cmd == COMMAND.SET_SERVO_ANGLE_BY_NAME and req.angle is not None:
+            req.angle = _angle_for_joint(angle=req.angle, name=req.name)
+        elif req.cmd == COMMAND.SET_SERVO_ANGLE_BY_POSITION and req.angle is not None:
+            req.angle = _angle_for_joint(angle=req.angle, position=req.position)
         try:
             sock = self._ensure_connected()
             sock.sendall((json.dumps(req.to_dict()) + "\n").encode())
@@ -82,12 +116,36 @@ class JetsonTcpClient:
     def get_servo_positions(self) -> Any:
         return self.request(Request(COMMAND.GET_SERVO_POSITIONS))
 
-    def set_servo_angle_by_name(self, name: str, angle: float) -> Any:
+    def set_servo_angle_by_name(
+        self,
+        name: str,
+        angle: float,
+        speed: int | None = None,
+        acceleration: int | None = None,
+    ) -> Any:
         return self.request(
-            Request(COMMAND.SET_SERVO_ANGLE_BY_NAME, name=name, angle=angle)
+            Request(
+                COMMAND.SET_SERVO_ANGLE_BY_NAME,
+                name=name,
+                angle=angle,
+                speed=speed,
+                acceleration=acceleration,
+            )
         )
 
-    def set_servo_angle_by_position(self, position: int, angle: float) -> Any:
+    def set_servo_angle_by_position(
+        self,
+        position: int,
+        angle: float,
+        speed: int | None = None,
+        acceleration: int | None = None,
+    ) -> Any:
         return self.request(
-            Request(COMMAND.SET_SERVO_ANGLE_BY_POSITION, position=position, angle=angle)
+            Request(
+                COMMAND.SET_SERVO_ANGLE_BY_POSITION,
+                position=position,
+                angle=angle,
+                speed=speed,
+                acceleration=acceleration,
+            )
         )
