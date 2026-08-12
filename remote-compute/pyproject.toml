@@ -3,6 +3,4 @@ name = "remote-compute"
 version = "0.1.0"
 description = "Rocky FastMCP server (talks to Jetson TCP Maestro pipe)"
 requires-python = ">=3.12"
-dependencies = [
-    "fastmcp[code-mode]>=3.1.0",
-]
+dependencies = []
