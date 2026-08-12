@@ -62,6 +62,7 @@ def main() -> None:
                         continue
                     try:
                         payload = json.loads(line)
+                        # print(f"fifo: {line}", flush=True)
                         result = client.request(payload)
                         print(f"ok {payload.get('cmd')}: {result}", flush=True)
                     except Exception as exc:

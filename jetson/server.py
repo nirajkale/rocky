@@ -71,7 +71,7 @@ def readline(conn, buf):
 
 
 def dispatch(req):
-    print(f"cmd: {req.cmd.value}", flush=True)
+    print(f"cmd: {json.dumps(req.to_dict(), sort_keys=True)}", flush=True)
 
     if req.cmd == COMMAND.PING:
         return {"pong": True}
@@ -103,12 +103,15 @@ def handle_client(conn, addr):
                 break
             if not line:
                 continue
+            print(f"recv: {line}", flush=True)
             try:
                 result = dispatch(Request.parse(json.loads(line)))
                 resp = Response.ok_result(result)
             except (ValueError, TypeError, KeyError, OSError, RuntimeError) as exc:
                 resp = Response.from_error(exc)
-            conn.sendall((json.dumps(resp.to_dict()) + "\n").encode("utf-8"))
+            out = json.dumps(resp.to_dict())
+            # print(f"send: {out}", flush=True)
+            conn.sendall((out + "\n").encode("utf-8"))
     finally:
         conn.close()
         print(f"client disconnected {peer}", flush=True)
