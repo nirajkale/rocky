@@ -103,7 +103,7 @@ def handle_client(conn, addr):
                 break
             if not line:
                 continue
-            print(f"recv: {line}", flush=True)
+            # print(f"recv: {line}", flush=True)
             try:
                 result = dispatch(Request.parse(json.loads(line)))
                 resp = Response.ok_result(result)
