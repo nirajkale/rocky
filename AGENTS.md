@@ -2,13 +2,24 @@
 
 Guidance for coding agents working on **Rocky** (robot control: Arduino sketches, Jetson Nano UART → Pololu Mini Maestro, remote-compute helpers).
 
+## Public docs (this is a public repo)
+
+- **Do not put machine-specific or personal details** into committed docs that are meant for others (especially `remote-compute/README.md`, root READMEs, protocol manuals). That includes: home directory paths, LAN IPs, hostnames, usernames, SSH identity file paths, tunnel IDs/keys, local absolute paths under `/Users/...`, and similar.
+- Prefer portable defaults already in code (e.g. `/tmp/rocky-commands.fifo`, env vars like `ROCKY_CMD_FIFO` / `ROCKY_JETSON_HOST`).
+- Operator-private connection details may live in **this** `AGENTS.md` for agents on a given clone, but keep user-facing protocol docs generic.
+- Do not commit secrets (passwords, API keys, tokens).
+
+**FIFO protocol reference for ChatGPT / operators:** [`remote-compute/README.md`](remote-compute/README.md) — request/response schema, commands, angles, joint map. Point external chats at that file; do not paste LAN/home-path specifics into it.
+
 ## Repo map
 
 | Path | Role |
 |------|------|
 | `arduino/` | Arduino sketches (RF client, etc.) |
-| `jetson/` | Jetson Nano Python: UART control of Pololu Mini Maestro |
-| `remote-compute/` | Host-side Python helpers (`main.py`, `maestro.py`) |
+| `jetson/` | Jetson Nano Python: UART control of Pololu Mini Maestro; TCP pipe `server.py` |
+| `remote-compute/` | Host-side bridge: FIFO → Jetson TCP (`main.py`, `jetson_tcp.py`) |
+| `commons/` | Shared request/response schema used by Jetson + remote-compute |
+| `remote-compute/README.md` | **FIFO control protocol** (ChatGPT / operator-facing: commands, types, responses) |
 | `push.sh` | Local helper: commit + push all `*.py` changes (gitignored; may exist only on clone) |
 
 ## Goals
@@ -177,4 +188,5 @@ When automating over SSH with password sudo, prefer an **interactive** `ssh -t` 
 
 - Python changes: from repo root, `./push.sh` or `./push.sh "message"` stages/commits/pushes `*.py` (script may be gitignored locally).
 - After pushing, pull on the Jetson before retesting hardware.
+- Host-side FIFO bridge: `remote-compute/main.py` (default FIFO `/tmp/rocky-commands.fifo`). Protocol for writers: `remote-compute/README.md`.
 - Do not commit secrets (SSH passwords, tokens) into `AGENTS.md` or the tree.

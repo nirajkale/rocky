@@ -22,13 +22,17 @@ Usage:
 import argparse
 import json
 import os
-import socketserver
+import socket
 import sys
-import threading
 
 import serial
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.abspath(os.path.join(_HERE, ".."))
+sys.path.insert(0, _HERE)
+sys.path.insert(0, _ROOT)
+
+from commons.schema import COMMAND, Request, Response
 from maestro import (
     BAUD_RATE,
     DEFAULT_PORT,
@@ -40,7 +44,6 @@ DEFAULT_TCP_HOST = "0.0.0.0"
 DEFAULT_TCP_PORT = 9000
 
 _maestro = None
-_maestro_lock = threading.Lock()
 
 
 def get_maestro():
@@ -55,75 +58,58 @@ def open_maestro(port, baud, detect_baud):
     return _maestro
 
 
-def handle_request(obj):
-    """Dispatch one request dict; return result or raise."""
-    if not isinstance(obj, dict):
-        raise TypeError("request must be a JSON object")
-    cmd = obj.get("cmd")
-    print(f"cmd: {cmd}", flush=True)
-    if not cmd:
-        raise ValueError("missing cmd")
+def readline(conn, buf):
+    """Read until \\n. Returns (line_str_or_None, leftover_buf). None = closed."""
+    while b"\n" not in buf:
+        chunk = conn.recv(4096)
+        if not chunk:
+            return None, buf
+        buf += chunk
+    line, buf = buf.split(b"\n", 1)
+    return line.decode("utf-8", "replace").strip(), buf
 
-    if cmd == "ping":
+
+def dispatch(req):
+    print(f"cmd: {req.cmd.value}", flush=True)
+
+    if req.cmd == COMMAND.PING:
         return {"pong": True}
 
-    if cmd == "get_servo_positions":
+    if req.cmd == COMMAND.GET_SERVO_POSITIONS:
         return servo_position_map()
 
-    if cmd == "set_servo_angle_by_name":
-        name = obj.get("name")
-        if name is None:
-            raise ValueError("name is required")
-        angle = obj.get("angle")
-        if angle is None:
-            raise ValueError("angle is required")
-        with _maestro_lock:
-            return get_maestro().set_angle_by_name(name, angle)
+    if req.cmd == COMMAND.SET_SERVO_ANGLE_BY_NAME:
+        return get_maestro().set_angle_by_name(req.name, req.angle)
 
-    if cmd == "set_servo_angle_by_position":
-        position = obj.get("position")
-        if position is None:
-            raise ValueError("position is required")
-        angle = obj.get("angle")
-        if angle is None:
-            raise ValueError("angle is required")
-        with _maestro_lock:
-            return get_maestro().set_angle_by_position(position, angle)
+    if req.cmd == COMMAND.SET_SERVO_ANGLE_BY_POSITION:
+        return get_maestro().set_angle_by_position(req.position, req.angle)
 
-    raise ValueError(f"unknown cmd {cmd!r}")
+    raise ValueError(f"unknown cmd {req.cmd!r}")
 
 
-class JsonLineHandler(socketserver.StreamRequestHandler):
-    def handle(self):
-        peer = f"{self.client_address[0]}:{self.client_address[1]}"
-        print(f"client connected {peer}", flush=True)
-        try:
-            while True:
-                raw = self.rfile.readline()
-                if not raw:
-                    break
-                line = raw.decode("utf-8", errors="replace").strip()
-                if not line:
-                    continue
-                try:
-                    req = json.loads(line)
-                    result = handle_request(req)
-                    resp = {"ok": True, "result": result}
-                except (ValueError, TypeError, KeyError, OSError, RuntimeError) as exc:
-                    resp = {"ok": False, "error": str(exc)}
-                out = (json.dumps(resp, separators=(",", ":")) + "\n").encode("utf-8")
-                self.wfile.write(out)
-                self.wfile.flush()
-        finally:
-            print(f"client disconnected {peer}", flush=True)
+def handle_client(conn, addr):
+    peer = f"{addr[0]}:{addr[1]}"
+    print(f"client connected {peer}", flush=True)
+    buf = b""
+    try:
+        while True:
+            line, buf = readline(conn, buf)
+            if line is None:
+                break
+            if not line:
+                continue
+            try:
+                result = dispatch(Request.parse(json.loads(line)))
+                resp = Response.ok_result(result)
+            except (ValueError, TypeError, KeyError, OSError, RuntimeError) as exc:
+                resp = Response.from_error(exc)
+            conn.sendall((json.dumps(resp.to_dict()) + "\n").encode("utf-8"))
+    finally:
+        conn.close()
+        print(f"client disconnected {peer}", flush=True)
 
 
-class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
-    allow_reuse_address = True
-    daemon_threads = True
-
-
-def parse_args():
+def main():
     parser = argparse.ArgumentParser(
         description="Rocky Maestro TCP pipe server (Jetson)"
     )
@@ -157,11 +143,8 @@ def parse_args():
         action="store_true",
         help="Listen on TCP without opening the serial port",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
 
-
-def main():
-    args = parse_args()
     if not args.dry_run:
         try:
             open_maestro(
@@ -177,17 +160,22 @@ def main():
     else:
         print("Dry-run: serial port not opened", flush=True)
 
-    server = ThreadedTCPServer((args.host, args.port), JsonLineHandler)
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind((args.host, args.port))
+    server.listen(1)
     print(
         f"TCP pipe listening on {args.host}:{args.port} (JSON lines)",
         flush=True,
     )
     try:
-        server.serve_forever()
+        while True:
+            conn, addr = server.accept()
+            handle_client(conn, addr)
     except KeyboardInterrupt:
         print("\nShutting down.", flush=True)
     finally:
-        server.server_close()
+        server.close()
         if _maestro is not None:
             _maestro.close()
 
